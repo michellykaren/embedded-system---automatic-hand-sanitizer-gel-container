@@ -31,7 +31,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define TIMCLOCK   8000000
+#define TIMCLOCK   32000000
 #define PRESCALAR  1
 /* USER CODE END PD */
 
@@ -68,6 +68,8 @@ static void MX_TIM1_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void touner_servo(void);
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef* htim);
 
 /* USER CODE END 0 */
 
@@ -120,14 +122,8 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  while(1){
-		  //HAL_GPIO_WritePin(GPIOB, LD3_Pin, 1);
-		  //__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_4, 1600);
-		  //HAL_Delay(2000);
-		  //HAL_GPIO_WritePin(GPIOB, LD3_Pin, 0);
-		  //__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_4, 3200);
-		  //HAL_Delay(2000);
-	  }
+	touner_servo();
+
   }
   /* USER CODE END 3 */
 }
@@ -148,7 +144,9 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL8;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -157,12 +155,12 @@ void SystemClock_Config(void)
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK)
   {
     Error_Handler();
   }
@@ -195,9 +193,9 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE END TIM1_Init 1 */
   htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 4;
+  htim1.Init.Prescaler = 9;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 31999;
+  htim1.Init.Period = 63999;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -266,9 +264,9 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 0;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 4294967295;
+  htim2.Init.Period = 65535;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
   {
     Error_Handler();
@@ -337,8 +335,22 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void touner_servo(void){
+	if (frequency > 93000){
+		HAL_GPIO_WritePin(GPIOB, LD3_Pin, 0);
+		__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_4, 3200);
+		HAL_Delay(100);
 
-void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
+
+	} else if (frequency > 90000 && frequency < 92800){
+		HAL_GPIO_WritePin(GPIOB, LD3_Pin, 1);
+		__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_4, 9600);
+		HAL_Delay(3200);
+	}
+}
+
+
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef* htim)
 {
 	if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
 	{
@@ -355,20 +367,16 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 			if (IC_Val2 > IC_Val1)
 			{
 				Difference = IC_Val2-IC_Val1;
+				float refClock = TIMCLOCK/(PRESCALAR);
+
+				//frequency = HAL_RCC_GetPCLK1Freq()/Difference;
+				frequency = refClock/Difference;
+
+				__HAL_TIM_SET_COUNTER(htim, 0);  // reset the counter
 			}
-
-			else if (IC_Val1 > IC_Val2)
-			{
-				Difference = (0xffffffff - IC_Val1) + IC_Val2;
-			}
-
-			float refClock = TIMCLOCK/(PRESCALAR);
-
-			frequency = refClock/Difference;
-
-			__HAL_TIM_SET_COUNTER(htim, 0);  // reset the counter
 			Is_First_Captured = 0; // set it back to false
 		}
+
 	}
 }
 
